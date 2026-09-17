@@ -1,0 +1,20 @@
+# MySQL só para desenvolvimento. No cliente usa-se o MySQL já instalado.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: transporte-mysql
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: transporte
+      MYSQL_USER: transporte_app
+      MYSQL_PASSWORD: transporte_dev
+      TZ: Africa/Luanda
+    ports:
+      - "3307:3306"
+    volumes:
+      - transporte-mysql:/var/lib/mysql
+
+volumes:
+  transporte-mysql:

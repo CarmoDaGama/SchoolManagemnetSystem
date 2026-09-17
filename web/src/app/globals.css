@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --color-primary: #2458c6;
+  --color-primary-dark: #1b449c;
+  --color-primary-soft: #e7eefb;
+  --color-danger: #c8323b;
+  --color-danger-soft: #fbe9ea;
+  --color-success: #1e7a4f;
+  --color-success-soft: #e4f4ec;
+  --color-warn: #9a6200;
+  --color-warn-soft: #fbf1dd;
+  --color-ink: #16202a;
+  --color-muted: #5b6776;
+  --color-line: #dce3ec;
+  --color-bg: #f6f8fb;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+input[type='number']::-webkit-inner-spin-button {
+  opacity: 0.4;
+}
+
+/* Impressão: A4 por omissão; a pauta usa A4 horizontal */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  .no-print,
+  nav,
+  header.app-bar {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000;
+    font-size: 10.5pt;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  .print-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+}
+
+@page mapa {
+  size: A4 landscape;
+  margin: 8mm;
+}
+/* recibo: folha A4 com duas vias de tamanho A5 (original e duplicado) */
+@page recibo {
+  size: A4;
+  margin: 8mm;
+}
+@media print {
+  .mapa-page {
+    page: mapa;
+  }
+  .recibo-page {
+    page: recibo;
+  }
+  .page-break {
+    break-after: page;
+  }
+}

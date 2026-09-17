@@ -1,0 +1,6 @@
+CREATE DATABASE IF NOT EXISTS transporte CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'transporte_app'@'localhost' IDENTIFIED BY 'TROCAR_SENHA_FORTE';
+CREATE USER IF NOT EXISTS 'transporte_app'@'127.0.0.1' IDENTIFIED BY 'TROCAR_SENHA_FORTE';
+GRANT ALL PRIVILEGES ON transporte.* TO 'transporte_app'@'localhost';
+GRANT ALL PRIVILEGES ON transporte.* TO 'transporte_app'@'127.0.0.1';
+FLUSH PRIVILEGES;

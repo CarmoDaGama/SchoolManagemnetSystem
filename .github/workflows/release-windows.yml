@@ -1,0 +1,71 @@
+name: release-windows
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  pacote:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24' # igual ao .msi que vai na pen
+
+      - name: Build web
+        working-directory: web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build e testes da api
+        working-directory: api
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+          npm test
+
+      - name: Montar pacote
+        shell: pwsh
+        run: |
+          $r = "release\TransporteApp"
+          New-Item -ItemType Directory -Force $r, "$r\scripts", "$r\logs", "$r\backups" | Out-Null
+          Copy-Item api\dist   "$r\dist"   -Recurse
+          Copy-Item web\out    "$r\web"    -Recurse
+          Copy-Item api\prisma "$r\prisma" -Recurse
+          Copy-Item api\package.json, api\package-lock.json $r
+          Copy-Item deploy\* "$r\scripts" -Recurse
+          Copy-Item deploy\.env.example "$r\scripts\.env.example"
+          if (Test-Path deploy\app.ico) { Move-Item "$r\scripts\app.ico" $r }
+
+          # NSSM (win64) para o serviço Windows; se o nssm.cc estiver em baixo, commitar deploy\nssm.exe
+          if (-not (Test-Path "$r\scripts\nssm.exe")) {
+            Invoke-WebRequest https://nssm.cc/release/nssm-2.24.zip -OutFile nssm.zip -MaximumRetryCount 3 -RetryIntervalSec 10
+            Expand-Archive nssm.zip -DestinationPath nssm
+            Copy-Item nssm\nssm-2.24\win64\nssm.exe "$r\scripts\nssm.exe"
+          }
+
+          Push-Location $r
+          $env:CHECKPOINT_DISABLE = "1"
+          npm ci --omit=dev
+          npx prisma generate --schema=prisma\schema.prisma
+          Pop-Location
+
+          # verificações: motores do Prisma para Windows e ficheiros essenciais
+          if (-not (Get-ChildItem "$r\node_modules" -Recurse -Filter "*windows*.dll.node")) { throw "Query engine Windows em falta" }
+          if (-not (Get-ChildItem "$r\node_modules" -Recurse -Filter "schema-engine-windows*")) { throw "Schema engine Windows em falta" }
+          foreach ($f in "dist\main.js", "dist\prisma\seed.js", "web\index.html", "scripts\nssm.exe", "scripts\install.bat") {
+            if (-not (Test-Path "$r\$f")) { throw "$f em falta" }
+          }
+
+          Compress-Archive -Path $r -DestinationPath release\TransporteApp.zip
+          (Get-FileHash release\TransporteApp.zip -Algorithm SHA256).Hash | Out-File release\TransporteApp.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TransporteApp-${{ github.ref_name }}
+          path: release/TransporteApp.*

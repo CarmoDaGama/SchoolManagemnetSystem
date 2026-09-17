@@ -1,0 +1,5 @@
+[client]
+user=transporte_app
+password=TROCAR_SENHA_FORTE
+host=127.0.0.1
+default-character-set=utf8mb4

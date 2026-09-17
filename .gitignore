@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+out/
+release/
+offline/
+coverage/
+*.log
+.env
+!deploy/.env.example
+deploy/backup.cnf
+api/backups/
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
