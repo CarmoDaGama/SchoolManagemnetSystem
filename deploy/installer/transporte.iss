@@ -43,6 +43,8 @@ Name: "pt"; MessagesFile: "compiler:Languages\Portuguese.isl"
 [Files]
 ; .env e scripts\backup.cnf são criados na instalação e nunca vêm no pacote (têm senhas)
 Source: "{#Fonte}\*"; DestDir: "{app}"; Excludes: ".env,backup.cnf,logs\*,backups\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; cópia usada pelo botão "Testar ligação", antes de os ficheiros serem instalados
+Source: "configurar.ps1"; Flags: dontcopy
 
 [Dirs]
 Name: "{app}\logs"
@@ -69,11 +71,23 @@ var
   BotaoTestar: TNewButton;
   EtiquetaTeste: TNewStaticText;
   Actualizacao: Boolean;
+  Falhou: Boolean;
 
-function PowerShellScript(const Accao, Dados: String): String;
+// a constante app só existe depois da página de pasta: durante o assistente usar WizardDirValue
+function PastaApp(): String;
 begin
-  Result := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\installer\configurar.ps1') +
-            '" -Accao ' + Accao + ' -App "' + ExpandConstant('{app}') + '"';
+  Result := RemoveBackslashUnlessRoot(WizardDirValue);
+end;
+
+{ Instalação anterior (tem .env): actualizar sem perguntar nada }
+function EActualizacao(): Boolean;
+begin
+  Result := FileExists(PastaApp() + '\.env');
+end;
+
+function PowerShellScript(const Script, Accao, App, Dados: String): String;
+begin
+  Result := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -Accao ' + Accao + ' -App "' + App + '"';
   if Dados <> '' then
     Result := Result + ' -Dados "' + Dados + '"';
 end;
@@ -98,8 +112,12 @@ var
   Dados: String;
 begin
   EtiquetaTeste.Caption := 'A verificar...';
+  WizardForm.Refresh();
   Dados := GuardarDados();
-  if Exec('powershell.exe', PowerShellScript('testar', Dados), '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0) then
+  { os ficheiros ainda não foram instalados: usar a cópia temporária do script }
+  ExtractTemporaryFile('configurar.ps1');
+  if Exec('powershell.exe', PowerShellScript(ExpandConstant('{tmp}\configurar.ps1'), 'testar', ExpandConstant('{tmp}'), Dados),
+          '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0) then
     EtiquetaTeste.Caption := 'Ligação ao MySQL confirmada.'
   else
     EtiquetaTeste.Caption := 'Não foi possível ligar. Verifique o utilizador, a senha e a porta.';
@@ -117,8 +135,6 @@ end;
 
 procedure InitializeWizard();
 begin
-  Actualizacao := FileExists(ExpandConstant('{app}\.env'));
-
   PaginaMySql := CreateInputQueryPage(wpSelectTasks,
     'Ligação ao MySQL',
     'O sistema precisa de criar a sua base de dados no MySQL deste computador.',
@@ -157,7 +173,7 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   { numa actualização a base e as senhas já existem }
-  Result := (PageID = PaginaMySql.ID) and Actualizacao;
+  Result := (PageID = PaginaMySql.ID) and EActualizacao();
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -173,7 +189,7 @@ begin
       Result := False;
     end;
   end
-  else if CurPageID = PaginaMySql.ID then
+  else if (PaginaMySql <> nil) and (CurPageID = PaginaMySql.ID) then
   begin
     if PaginaMySql.Values[0] = '' then
     begin
@@ -193,7 +209,10 @@ var
   Codigo: Integer;
   Dados, Accao: String;
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssInstall then
+    { decidido antes de copiar: o pacote nunca traz .env, por isso só existe numa instalação anterior }
+    Actualizacao := EActualizacao()
+  else if CurStep = ssPostInstall then
   begin
     if Actualizacao then
     begin
@@ -207,16 +226,24 @@ begin
     end;
 
     WizardForm.StatusLabel.Caption := 'A configurar a base de dados e o serviço Windows...';
-    if not (Exec('powershell.exe', PowerShellScript(Accao, Dados), '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0)) then
+    WizardForm.Refresh();
+    if not (Exec('powershell.exe',
+                 PowerShellScript(ExpandConstant('{app}\scripts\installer\configurar.ps1'), Accao, ExpandConstant('{app}'), Dados),
+                 '', SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0)) then
     begin
-      if Dados <> '' then DeleteFile(Dados);
+      Falhou := True;
       MsgBox('A configuração não ficou concluída.' + #13#10#13#10 +
              'Veja o ficheiro ' + ExpandConstant('{app}\logs\instalacao.log') + ' para saber o motivo.' + #13#10 +
              'Depois de corrigir, volte a executar este instalador.', mbError, MB_OK);
-      Abort();
     end;
     if Dados <> '' then DeleteFile(Dados);
   end;
+end;
+
+{ Instalação silenciosa: código de saída diferente de 0 se a configuração falhou }
+function GetCustomSetupExitCode(): Integer;
+begin
+  if Falhou then Result := 99 else Result := 0;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
