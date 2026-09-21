@@ -202,6 +202,14 @@ FLUSH PRIVILEGES;
   }
   Escrever "Base '$BASE' e utilizador '$UTILIZADOR' prontos."
 
+  # mysqldump recente (MySQL 8.0.32+, 8.4, 9.x) faz FLUSH TABLES com --single-transaction e exige
+  # o privilégio global FLUSH_TABLES. Não dá acesso a outras bases. Em servidores antigos ou MariaDB
+  # o privilégio não existe, mas o mysqldump também não o pede: o erro é ignorado.
+  $flush = "GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'localhost'; GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'127.0.0.1'; FLUSH PRIVILEGES;"
+  $r = Correr-MySql $mysql $rootUser $rootSenha $porta $flush
+  if ($r.Ok) { Escrever 'Privilégio FLUSH_TABLES concedido (necessário às cópias de segurança).' }
+  else { Escrever "FLUSH_TABLES não disponível neste MySQL (normal em versões antigas): $($r.Saida)" 'AVISO' }
+
   $r = Correr-MySql $mysql $UTILIZADOR $senhaBD $porta "USE $BASE; SELECT 1;"
   if (-not $r.Ok) { Falhar "O utilizador '$UTILIZADOR' não consegue ligar-se à base: $($r.Saida)" }
 
