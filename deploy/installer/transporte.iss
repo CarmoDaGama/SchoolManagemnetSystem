@@ -204,6 +204,29 @@ begin
   end;
 end;
 
+{ Numa actualização, o serviço tem os ficheiros abertos (node_modules, dist): parar antes de copiar.
+  O configurar.ps1 volta a instalá-lo e a iniciá-lo no fim. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Codigo, I: Integer;
+  Nssm: String;
+begin
+  Result := '';
+  Nssm := PastaApp() + '\scripts\nssm.exe';
+  if FileExists(Nssm) then
+  begin
+    Exec(Nssm, 'stop TransporteApp', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+    { esperar que o processo liberte os ficheiros }
+    for I := 1 to 20 do
+    begin
+      if not Exec('cmd.exe', '/c sc query TransporteApp | find "RUNNING" >nul', '', SW_HIDE, ewWaitUntilTerminated, Codigo) or (Codigo <> 0) then
+        Break;
+      Sleep(1000);
+    end;
+    Sleep(2000);
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Codigo: Integer;

@@ -171,4 +171,5 @@ jobs:
           "=== instalacao.log"; Get-Content C:\TransporteApp\logs\instalacao.log -ErrorAction SilentlyContinue
           "=== err.log"; Get-Content C:\TransporteApp\logs\err.log -Tail 50 -ErrorAction SilentlyContinue
           "=== setup.log"; Get-Content setup.log -Tail 60 -ErrorAction SilentlyContinue
+          "=== setup2.log (actualização)"; Get-Content setup2.log -ErrorAction SilentlyContinue | Select-String -Pattern 'error|erro|fail|abort|in use|cancel|Exception|Deinitializing|succeeded' -CaseSensitive:$false | Select-Object -Last 30
           "=== processos"; Get-Process powershell, node, mysql*, nssm, TransporteApp* -ErrorAction SilentlyContinue | Format-Table Id, Name, StartTime -AutoSize
