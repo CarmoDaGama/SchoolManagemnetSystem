@@ -310,14 +310,18 @@ sc query state= all | findstr /i mysql
 - [ ] Data, hora e fuso correctos
 - [ ] Edge presente; letra habitual da pen
 
-### Passos
+### Passos (instalador `TransporteApp-Setup-x.y.z.exe`)
 
 1. Instalar o Node pelo `.msi` (desmarcar "Tools for native modules")
-2. Extrair `TransporteApp.zip` para `C:\` → `C:\TransporteApp`
-3. `mysql.exe -u root -p < C:\TransporteApp\scripts\criar-base.sql`
-4. Copiar `scripts\.env.example` → `C:\TransporteApp\.env` e `scripts\backup.cnf.example` → `scripts\backup.cnf`; preencher
-5. `scripts\install.bat` como administrador (nome real do serviço MySQL)
-6. Reiniciar, abrir o atalho, configurar empresa, ano e rotas, importar alunos
+2. Executar `TransporteApp-Setup-x.y.z.exe` e responder: utilizador e senha de administrador do MySQL (root, usado uma só vez), porta (3306) e senha inicial do `admin` do sistema. Usar "Testar ligação".
+3. O instalador faz o resto: encontra o MySQL e o nome do serviço, cria a base `transporte` e o utilizador `transporte_app` com senha gerada, escreve `.env` e `backup.cnf` (só legíveis por SYSTEM e administradores), aplica migrations, corre a seed, instala o serviço e cria o atalho com ícone. Registo em `C:\TransporteApp\logs\instalacao.log`.
+4. Reiniciar, abrir o atalho, configurar empresa, ano, rotas e a pen das cópias; importar alunos
+
+- **Actualizar:** executar o Setup da versão nova por cima — detecta o `.env`, não pergunta nada, mantém base e senhas, aplica migrations e reinicia o serviço.
+- **Instalação silenciosa:** `TransporteApp-Setup-x.y.z.exe /VERYSILENT /SUPPRESSMSGBOXES /MYSQLUSER=root /MYSQLPASS=... /ADMINPASS=...`
+- **Desinstalar:** Painel de Controlo › Programas; remove o serviço e o atalho, pergunta se apaga cópias e registos; a base no MySQL nunca é apagada.
+- **Lançador:** o atalho chama `scripts\abrir.cmd`, que confirma que o serviço responde (inicia-o se preciso) e abre o Edge em modo aplicação, maximizado, sem tradução.
+- **Plano B (manual):** o ZIP e `scripts\install.bat` continuam disponíveis se o instalador falhar.
 
 ### Ciclo até sexta
 

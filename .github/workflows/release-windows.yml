@@ -58,14 +58,98 @@ jobs:
           # verificações: motores do Prisma para Windows e ficheiros essenciais
           if (-not (Get-ChildItem "$r\node_modules" -Recurse -Filter "*windows*.dll.node")) { throw "Query engine Windows em falta" }
           if (-not (Get-ChildItem "$r\node_modules" -Recurse -Filter "schema-engine-windows*")) { throw "Schema engine Windows em falta" }
-          foreach ($f in "dist\main.js", "dist\prisma\seed.js", "web\index.html", "scripts\nssm.exe", "scripts\install.bat") {
+          foreach ($f in "dist\main.js", "dist\prisma\seed.js", "web\index.html", "scripts\nssm.exe", "scripts\install.bat", "scripts\abrir.cmd", "scripts\installer\configurar.ps1", "app.ico") {
             if (-not (Test-Path "$r\$f")) { throw "$f em falta" }
           }
 
           Compress-Archive -Path $r -DestinationPath release\TransporteApp.zip
           (Get-FileHash release\TransporteApp.zip -Algorithm SHA256).Hash | Out-File release\TransporteApp.sha256
 
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $versao = "${{ github.ref_name }}" -replace '^v', ''
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc /Q "/DVersao=$versao" "/DFonte=..\..\release\TransporteApp" deploy\installer\transporte.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou ($LASTEXITCODE)" }
+          Get-ChildItem release\TransporteApp-Setup-*.exe | ForEach-Object {
+            (Get-FileHash $_.FullName -Algorithm SHA256).Hash | Out-File "$($_.FullName).sha256"
+            "Instalador: $($_.Name) ($([math]::Round($_.Length / 1MB, 1)) MB)"
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: TransporteApp-${{ github.ref_name }}
-          path: release/TransporteApp.*
+          path: |
+            release/TransporteApp.zip
+            release/TransporteApp.sha256
+            release/TransporteApp-Setup-*
+
+  # Instala o Setup num Windows limpo com MySQL, como no PC do cliente, e confirma que o sistema responde
+  teste-instalador:
+    needs: pacote
+    runs-on: windows-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: TransporteApp-${{ github.ref_name }}
+          path: release
+
+      - name: MySQL (como o do cliente)
+        shell: pwsh
+        run: |
+          $svc = Get-Service | Where-Object { $_.Name -match 'mysql' } | Select-Object -First 1
+          if (-not $svc) { choco install mysql -y --no-progress; $svc = Get-Service | Where-Object { $_.Name -match 'mysql' } | Select-Object -First 1 }
+          if ($svc.Status -ne 'Running') { Start-Service $svc.Name }
+          Get-Service $svc.Name
+          # senha de root conhecida para o teste
+          $bin = Get-ChildItem "$env:ProgramFiles\MySQL", "C:\tools" -Recurse -Filter mysql.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
+          foreach ($senha in '', 'root', 'Password12!') {
+            $env:MYSQL_PWD = $senha
+            & "$bin\mysql.exe" -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'RootTeste123';" 2>$null
+            if ($LASTEXITCODE -eq 0) { break }
+          }
+          $env:MYSQL_PWD = 'RootTeste123'
+          & "$bin\mysql.exe" -u root -e "SELECT VERSION();"
+          if ($LASTEXITCODE -ne 0) { throw "MySQL de teste sem acesso root" }
+
+      - name: Instalar em modo silencioso
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release\TransporteApp-Setup-*.exe | Select-Object -First 1
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup.log', '/MYSQLUSER=root', '/MYSQLPASS=RootTeste123', '/ADMINPASS=AdminTeste123' -Wait -PassThru
+          "código de saída: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "Instalador falhou" }
+
+      - name: Verificar sistema instalado
+        shell: pwsh
+        run: |
+          Get-Service TransporteApp
+          (Invoke-WebRequest http://127.0.0.1:3100/api/health -UseBasicParsing).StatusCode
+          (Invoke-WebRequest http://127.0.0.1:3100/login/ -UseBasicParsing).StatusCode
+          $login = Invoke-WebRequest http://127.0.0.1:3100/api/auth/login -Method Post -ContentType 'application/json' -Body '{"username":"admin","senha":"AdminTeste123"}' -UseBasicParsing -SessionVariable s
+          if ($login.StatusCode -ne 200) { throw "login falhou" }
+          $copia = Invoke-RestMethod http://127.0.0.1:3100/api/backup/agora -Method Post -WebSession $s
+          "cópia: $($copia.ficheiro) $($copia.tamanhoBytes) bytes"
+          if (-not $copia.sucesso) { throw "cópia de segurança falhou" }
+          if (-not (Test-Path "$env:PUBLIC\Desktop\Transporte Escolar.lnk")) { throw "atalho em falta" }
+          # reinstalar por cima tem de manter os dados (modo actualização)
+          $setup = Get-ChildItem release\TransporteApp-Setup-*.exe | Select-Object -First 1
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup2.log' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Actualização falhou" }
+          $login = Invoke-WebRequest http://127.0.0.1:3100/api/auth/login -Method Post -ContentType 'application/json' -Body '{"username":"admin","senha":"AdminTeste123"}' -UseBasicParsing
+          if ($login.StatusCode -ne 200) { throw "login após actualização falhou" }
+          "Instalação e actualização OK"
+
+      - name: Registos (se falhar)
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Content C:\TransporteApp\logs\instalacao.log -ErrorAction SilentlyContinue
+          Get-Content C:\TransporteApp\logs\err.log -Tail 50 -ErrorAction SilentlyContinue
+          Get-Content setup.log -Tail 60 -ErrorAction SilentlyContinue

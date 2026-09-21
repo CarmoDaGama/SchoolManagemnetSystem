@@ -2,7 +2,7 @@
   "name": "transporte-api",
   "version": "1.0.0",
   "private": true,
-  "description": "Sistema de GestÃ£o Escolar - API NestJS",
+  "description": "Gestão de Transporte Escolar - API NestJS",
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
