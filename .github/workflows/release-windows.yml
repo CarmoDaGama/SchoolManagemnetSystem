@@ -120,14 +120,22 @@ jobs:
 
       - name: Instalar em modo silencioso
         shell: pwsh
+        timeout-minutes: 15
         run: |
           $setup = Get-ChildItem release\TransporteApp-Setup-*.exe | Select-Object -First 1
-          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup.log', '/MYSQLUSER=root', '/MYSQLPASS=RootTeste123', '/ADMINPASS=AdminTeste123' -Wait -PassThru
+          # Start-Process -Wait esperaria também pelos processos filhos; aqui espera-se só pelo Setup
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup.log', '/MYSQLUSER=root', '/MYSQLPASS=RootTeste123', '/ADMINPASS=AdminTeste123' -PassThru
+          $log = 'C:\TransporteApp\logs\instalacao.log'; $lidas = 0
+          while (-not $p.WaitForExit(5000)) {
+            if (Test-Path $log) { $l = @(Get-Content $log); $l[$lidas..($l.Count - 1)] | Where-Object { $_ }; $lidas = $l.Count }
+          }
+          if (Test-Path $log) { $l = @(Get-Content $log); if ($l.Count -gt $lidas) { $l[$lidas..($l.Count - 1)] } }
           "código de saída: $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw "Instalador falhou" }
+          if ($p.ExitCode -ne 0) { throw "Instalador falhou (código $($p.ExitCode))" }
 
       - name: Verificar sistema instalado
         shell: pwsh
+        timeout-minutes: 10
         run: |
           Get-Service TransporteApp
           (Invoke-WebRequest http://127.0.0.1:3100/api/health -UseBasicParsing).StatusCode
@@ -140,16 +148,18 @@ jobs:
           if (-not (Test-Path "$env:PUBLIC\Desktop\Transporte Escolar.lnk")) { throw "atalho em falta" }
           # reinstalar por cima tem de manter os dados (modo actualização)
           $setup = Get-ChildItem release\TransporteApp-Setup-*.exe | Select-Object -First 1
-          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup2.log' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Actualização falhou" }
+          $p = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=setup2.log' -PassThru
+          if (-not $p.WaitForExit(600000)) { throw "Actualização não terminou em 10 min" }
+          if ($p.ExitCode -ne 0) { throw "Actualização falhou (código $($p.ExitCode))" }
           $login = Invoke-WebRequest http://127.0.0.1:3100/api/auth/login -Method Post -ContentType 'application/json' -Body '{"username":"admin","senha":"AdminTeste123"}' -UseBasicParsing
           if ($login.StatusCode -ne 200) { throw "login após actualização falhou" }
           "Instalação e actualização OK"
 
-      - name: Registos (se falhar)
-        if: failure()
+      - name: Registos
+        if: always()
         shell: pwsh
         run: |
-          Get-Content C:\TransporteApp\logs\instalacao.log -ErrorAction SilentlyContinue
-          Get-Content C:\TransporteApp\logs\err.log -Tail 50 -ErrorAction SilentlyContinue
-          Get-Content setup.log -Tail 60 -ErrorAction SilentlyContinue
+          "=== instalacao.log"; Get-Content C:\TransporteApp\logs\instalacao.log -ErrorAction SilentlyContinue
+          "=== err.log"; Get-Content C:\TransporteApp\logs\err.log -Tail 50 -ErrorAction SilentlyContinue
+          "=== setup.log"; Get-Content setup.log -Tail 60 -ErrorAction SilentlyContinue
+          "=== processos"; Get-Process powershell, node, mysql*, nssm, TransporteApp* -ErrorAction SilentlyContinue | Format-Table Id, Name, StartTime -AutoSize

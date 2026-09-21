@@ -66,19 +66,47 @@ function Encontrar-MySql {
   [pscustomobject]@{ Bin = $bin; Servico = $(if ($servico) { $servico.Name } else { '' }) }
 }
 
-function Correr-MySql($mysql, $utilizador, $senha, $porta, $sql, $ficheiro) {
-  $env:MYSQL_PWD = $senha   # nunca na linha de comandos: não aparece na lista de processos
-  try {
-    $args = @('--host=127.0.0.1', "--port=$porta", "--user=$utilizador", '--default-character-set=utf8mb4', '--connect-timeout=10')
-    if ($ficheiro) {
-      $saida = Get-Content -Raw -Path $ficheiro | & $mysql @args 2>&1
-    } else {
-      $saida = & $mysql @args '-e' $sql 2>&1
-    }
-    return [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Saida = ($saida | Out-String).Trim() }
-  } finally {
-    Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
+<#
+  Corre um programa externo com tempo limite. Nenhum passo pode deixar o instalador parado:
+  se não terminar a tempo, a árvore de processos é terminada e o motivo fica no registo.
+#>
+function Executar {
+  param(
+    [string]$Exe, [string[]]$Argumentos = @(), [int]$Segundos = 120,
+    [string]$Entrada = $null, [hashtable]$Ambiente = @{}, [string]$Pasta = $App
+  )
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName = $Exe
+  $psi.Arguments = ($Argumentos | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.RedirectStandardInput = $true
+  $psi.WorkingDirectory = $Pasta
+  # variáveis só para o processo filho (ex.: MYSQL_PWD nunca aparece na linha de comandos)
+  foreach ($k in $Ambiente.Keys) { $psi.EnvironmentVariables[$k] = [string]$Ambiente[$k] }
+  $p = [Diagnostics.Process]::Start($psi)
+  $out = $p.StandardOutput.ReadToEndAsync()
+  $err = $p.StandardError.ReadToEndAsync()
+  if ($Entrada) { $p.StandardInput.Write($Entrada) }
+  $p.StandardInput.Close()   # nunca deixar um programa à espera de teclado
+  if (-not $p.WaitForExit($Segundos * 1000)) {
+    & taskkill.exe /T /F /PID $p.Id 2>&1 | Out-Null
+    return [pscustomobject]@{ Ok = $false; Codigo = -1; Saida = "$([IO.Path]::GetFileName($Exe)) não terminou em $Segundos s e foi interrompido." }
   }
+  $p.WaitForExit()
+  [pscustomobject]@{ Ok = ($p.ExitCode -eq 0); Codigo = $p.ExitCode; Saida = ($out.Result + "`n" + $err.Result).Trim() }
+}
+
+function Correr-MySql($mysql, $utilizador, $senha, $porta, $sql, $ficheiro) {
+  $opcoes = @('--host=127.0.0.1', "--port=$porta", "--user=$utilizador", '--default-character-set=utf8mb4', '--connect-timeout=10', '--batch', '--skip-column-names')
+  $entrada = $null
+  if ($ficheiro) { $entrada = Get-Content -Raw -Path $ficheiro } else { $opcoes += @('-e', $sql) }
+  $r = Executar -Exe $mysql -Argumentos $opcoes -Segundos 60 -Entrada $entrada -Ambiente @{ MYSQL_PWD = $senha }
+  # o aviso de senha em variável de ambiente não é erro
+  $r.Saida = (($r.Saida -split "`n") | Where-Object { $_ -notmatch 'Using a password|MYSQL_PWD|\[Warning\]' }) -join "`n"
+  $r
 }
 
 # senha só com letras e números: não precisa de escape no DATABASE_URL nem no SQL
@@ -209,51 +237,57 @@ PRISMA_HIDE_UPDATE_MESSAGE=1
 
 # ---------------------------------------------------------------- migrations e dados iniciais
 
-Push-Location $App
-try {
-  $env:CHECKPOINT_DISABLE = '1'
-  Escrever 'A aplicar migrations...'
-  $saida = & (Join-Path $App 'node_modules\.bin\prisma.cmd') migrate deploy --schema=prisma\schema.prisma 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0) { Falhar "As migrations falharam: $saida" }
-  Escrever ($saida.Trim() -split "`n" | Select-Object -Last 1)
+$ambienteNode = @{ CHECKPOINT_DISABLE = '1'; PRISMA_HIDE_UPDATE_MESSAGE = '1' }
 
-  Escrever 'A criar os dados iniciais...'
-  $saida = & $node 'dist\prisma\seed.js' 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0) { Falhar "A seed falhou: $saida" }
-  Escrever $saida.Trim()
-} finally {
-  Pop-Location
-}
+# prisma chamado directamente pelo node (sem prisma.cmd): nenhum cmd.exe intermédio fica pendurado
+$prismaCli = Join-Path $App 'node_modules\prisma\build\index.js'
+Escrever 'A aplicar migrations...'
+$r = Executar -Exe $node -Argumentos @($prismaCli, 'migrate', 'deploy', '--schema=prisma\schema.prisma') -Segundos 300 -Ambiente $ambienteNode
+if (-not $r.Ok) { Falhar "As migrations falharam: $($r.Saida)" }
+Escrever (($r.Saida -split "`n" | Where-Object { $_.Trim() }) | Select-Object -Last 1)
+
+Escrever 'A criar os dados iniciais...'
+$r = Executar -Exe $node -Argumentos @('dist\prisma\seed.js') -Segundos 120 -Ambiente $ambienteNode
+if (-not $r.Ok) { Falhar "A seed falhou: $($r.Saida)" }
+Escrever $r.Saida
 
 # ---------------------------------------------------------------- serviço Windows
 
 $nssm = Join-Path $App 'scripts\nssm.exe'
-& $nssm stop $SVC 2>&1 | Out-Null
-& $nssm remove $SVC confirm 2>&1 | Out-Null
-& $nssm install $SVC $node "$App\dist\main.js" | Out-Null
-& $nssm set $SVC AppDirectory $App | Out-Null
-& $nssm set $SVC DisplayName 'Transporte Escolar' | Out-Null
-& $nssm set $SVC Description 'Sistema de Gestão de Transporte Escolar (http://127.0.0.1:3100)' | Out-Null
-& $nssm set $SVC Start SERVICE_AUTO_START | Out-Null
-if ($mysqlInfo.Servico) { & $nssm set $SVC DependOnService $mysqlInfo.Servico | Out-Null }
-& $nssm set $SVC AppEnvironmentExtra CHECKPOINT_DISABLE=1 | Out-Null
-& $nssm set $SVC AppStdout "$App\logs\out.log" | Out-Null
-& $nssm set $SVC AppStderr "$App\logs\err.log" | Out-Null
-& $nssm set $SVC AppRotateFiles 1 | Out-Null
-& $nssm set $SVC AppRotateBytes 5242880 | Out-Null
-& $nssm set $SVC AppExit Default Restart | Out-Null
-& $nssm set $SVC AppRestartDelay 5000 | Out-Null
-& $nssm start $SVC | Out-Null
-Escrever "Serviço '$SVC' instalado e iniciado$(if ($mysqlInfo.Servico) { " (depende de $($mysqlInfo.Servico))" })."
+function Nssm([string[]]$a, [switch]$Tolerar) {
+  $r = Executar -Exe $nssm -Argumentos $a -Segundos 60
+  if (-not $r.Ok -and -not $Tolerar) { Falhar "nssm $($a -join ' ') falhou: $($r.Saida)" }
+}
+
+Escrever 'A instalar o serviço Windows...'
+Nssm @('stop', $SVC) -Tolerar
+Nssm @('remove', $SVC, 'confirm') -Tolerar
+Nssm @('install', $SVC, $node, "$App\dist\main.js")
+Nssm @('set', $SVC, 'AppDirectory', $App)
+Nssm @('set', $SVC, 'DisplayName', 'Transporte Escolar')
+Nssm @('set', $SVC, 'Description', 'Sistema de Transporte Escolar (http://127.0.0.1:3100)')
+Nssm @('set', $SVC, 'Start', 'SERVICE_AUTO_START')
+if ($mysqlInfo.Servico) { Nssm @('set', $SVC, 'DependOnService', $mysqlInfo.Servico) }
+Nssm @('set', $SVC, 'AppEnvironmentExtra', 'CHECKPOINT_DISABLE=1')
+Nssm @('set', $SVC, 'AppStdout', "$App\logs\out.log")
+Nssm @('set', $SVC, 'AppStderr', "$App\logs\err.log")
+Nssm @('set', $SVC, 'AppRotateFiles', '1')
+Nssm @('set', $SVC, 'AppRotateBytes', '5242880')
+Nssm @('set', $SVC, 'AppExit', 'Default', 'Restart')
+Nssm @('set', $SVC, 'AppRestartDelay', '5000')
+Escrever 'A iniciar o serviço...'
+Nssm @('start', $SVC) -Tolerar   # o arranque pode demorar; a verificação final confirma
+Escrever "Serviço '$SVC' instalado$(if ($mysqlInfo.Servico) { " (depende de $($mysqlInfo.Servico))" })."
 
 # ---------------------------------------------------------------- atalho e verificação final
 
 $atalho = Join-Path $App 'scripts\criar-atalho.ps1'
 if (Test-Path $atalho) {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $atalho
-  Escrever 'Atalho criado no ambiente de trabalho.'
+  $r = Executar -Exe 'powershell.exe' -Argumentos @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $atalho) -Segundos 60
+  if ($r.Ok) { Escrever 'Atalho criado no ambiente de trabalho.' } else { Escrever "Não foi possível criar o atalho: $($r.Saida)" 'AVISO' }
 }
 
+Escrever 'A confirmar que o sistema responde...'
 $ok = $false
 for ($i = 1; $i -le 20 -and -not $ok; $i++) {
   Start-Sleep -Seconds 2
