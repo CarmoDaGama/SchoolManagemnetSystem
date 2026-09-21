@@ -1,4 +1,4 @@
-; Instalador do Transporte Escolar (Inno Setup 6)
+﻿; Instalador do Transporte Escolar (Inno Setup 6)
 ; Compilar:  ISCC.exe /DVersao=1.0.0 /DFonte=..\..\release\TransporteApp deploy\installer\transporte.iss
 ; A pasta Fonte é a que o workflow monta (dist, web, prisma, node_modules, scripts, package.json).
 ; Pré-requisitos no PC: Windows 10/11 x64, Node.js 24 (msi da pen) e o MySQL já instalado.

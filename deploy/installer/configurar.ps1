@@ -206,16 +206,17 @@ FLUSH PRIVILEGES;
   if (-not $r.Ok) { Falhar "O utilizador '$UTILIZADOR' não consegue ligar-se à base: $($r.Saida)" }
 
   $adminSenha = if ($cfg.adminSenha) { $cfg.adminSenha } else { 'admin123' }
+  # caminhos Windows entre aspas simples: com aspas duplas o Node transforma "\n" (ex.: C:\nova) em mudança de linha
   $conteudoEnv = @"
 NODE_ENV=production
 PORT=3100
 DATABASE_URL="mysql://$UTILIZADOR`:$senhaBD@127.0.0.1:$porta/$BASE"
 JWT_SECRET=$(Nova-Senha 32)
 WEB_DIR=web
-MYSQLDUMP_PATH="$mysqldump"
-MYSQL_PATH="$mysql"
-MYSQL_CNF=$cnfPath
-BACKUP_DIR_INICIAL=$App\backups
+MYSQLDUMP_PATH='$mysqldump'
+MYSQL_PATH='$mysql'
+MYSQL_CNF='$cnfPath'
+BACKUP_DIR_INICIAL='$App\backups'
 ADMIN_SENHA=$adminSenha
 CHECKPOINT_DISABLE=1
 PRISMA_HIDE_UPDATE_MESSAGE=1

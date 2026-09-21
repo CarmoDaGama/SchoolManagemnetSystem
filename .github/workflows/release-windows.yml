@@ -142,9 +142,18 @@ jobs:
           (Invoke-WebRequest http://127.0.0.1:3100/login/ -UseBasicParsing).StatusCode
           $login = Invoke-WebRequest http://127.0.0.1:3100/api/auth/login -Method Post -ContentType 'application/json' -Body '{"username":"admin","senha":"AdminTeste123"}' -UseBasicParsing -SessionVariable s
           if ($login.StatusCode -ne 200) { throw "login falhou" }
-          $copia = Invoke-RestMethod http://127.0.0.1:3100/api/backup/agora -Method Post -WebSession $s
-          "cópia: $($copia.ficheiro) $($copia.tamanhoBytes) bytes"
-          if (-not $copia.sucesso) { throw "cópia de segurança falhou" }
+          try {
+            $copia = Invoke-RestMethod http://127.0.0.1:3100/api/backup/agora -Method Post -WebSession $s
+            "cópia: $($copia.ficheiro) $($copia.tamanhoBytes) bytes"
+          } catch {
+            # o motivo exacto fica no histórico de cópias
+            $h = Invoke-RestMethod http://127.0.0.1:3100/api/backup/historico -WebSession $s
+            "motivo: $($h[0].aviso)"
+            "config: $(Invoke-RestMethod http://127.0.0.1:3100/api/backup/config -WebSession $s | ConvertTo-Json -Compress)"
+            Get-Content C:\TransporteApp\.env | Where-Object { $_ -match 'MYSQL|BACKUP' }
+            Get-Content C:\TransporteApp\logs\err.log -Tail 20 -ErrorAction SilentlyContinue
+            throw "cópia de segurança falhou"
+          }
           if (-not (Test-Path "$env:PUBLIC\Desktop\Transporte Escolar.lnk")) { throw "atalho em falta" }
           # reinstalar por cima tem de manter os dados (modo actualização)
           $setup = Get-ChildItem release\TransporteApp-Setup-*.exe | Select-Object -First 1
