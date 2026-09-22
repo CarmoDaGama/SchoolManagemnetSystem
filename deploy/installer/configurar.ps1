@@ -43,25 +43,34 @@ function Falhar($texto) {
 
 # ---------------------------------------------------------------- MySQL
 
-function Encontrar-MySql {
-  # 1) pelo serviço do Windows: dá o nome do serviço e o caminho real dos binários
+<#
+  Encontra os programas do MySQL. O serviço do Windows é opcional: serve apenas para o serviço
+  do sistema arrancar depois do MySQL. Há instalações (como a do KSoft) em que o MySQL vive
+  dentro da pasta de outro programa, por isso a pasta pode ser indicada à mão.
+#>
+function Encontrar-MySql([string]$BinIndicado) {
   $servico = Get-CimInstance Win32_Service |
-    Where-Object { $_.Name -match 'mysql|maria' -or $_.DisplayName -match 'mysql|maria' } |
+    Where-Object { $_.PathName -match 'mysqld|mariadbd' } |
     Sort-Object { $_.State -ne 'Running' } | Select-Object -First 1
-  $bin = $null
-  if ($servico -and $servico.PathName -match '"?([^"]*?\\bin)\\mysqld') { $bin = $Matches[1] }
-  # 2) instalações sem serviço registado ou com caminho invulgar
-  if (-not $bin -or -not (Test-Path (Join-Path $bin 'mysql.exe'))) {
-    $bin = @(
-      "$env:ProgramFiles\MySQL\*\bin", "${env:ProgramFiles(x86)}\MySQL\*\bin",
-      'C:\xampp\mysql\bin', 'C:\laragon\bin\mysql\*\bin', "$env:ProgramFiles\MariaDB*\bin"
-    ) | ForEach-Object { Get-ChildItem $_ -Directory -ErrorAction SilentlyContinue } |
-      Where-Object { Test-Path (Join-Path $_.FullName 'mysql.exe') } |
-      Select-Object -Last 1 -ExpandProperty FullName
-  }
-  if (-not $bin) { Falhar 'Não encontrei o MySQL neste computador. Instale-o ou indique a pasta manualmente no .env.' }
-  foreach ($exe in 'mysql.exe', 'mysqldump.exe') {
-    if (-not (Test-Path (Join-Path $bin $exe))) { Falhar "Encontrei a pasta do MySQL ($bin) mas falta o $exe." }
+
+  $candidatos = @()
+  if ($BinIndicado) { $candidatos += $BinIndicado.Trim('"').TrimEnd('\') }
+  # 1) pelo processo em execução: funciona mesmo sem serviço registado
+  $candidatos += (Get-Process mysqld, mariadbd -ErrorAction SilentlyContinue | ForEach-Object { Split-Path $_.Path -Parent })
+  # 2) pelo serviço
+  if ($servico -and $servico.PathName -match '"?([^"]*?)\\(mysqld|mariadbd)') { $candidatos += $Matches[1] }
+  # 3) pelos sítios habituais, incluindo MySQL dentro da pasta de outro programa
+  $candidatos += @(
+    "$env:ProgramFiles\MySQL\*\bin", "${env:ProgramFiles(x86)}\MySQL\*\bin",
+    "$env:ProgramFiles\*\MysqlServer\bin", "${env:ProgramFiles(x86)}\*\MysqlServer\bin",
+    "$env:ProgramFiles\MariaDB*\bin", "${env:ProgramFiles(x86)}\MariaDB*\bin",
+    'C:\xampp\mysql\bin', 'C:\laragon\bin\mysql\*\bin', 'C:\tools\mysql\*\bin', 'C:\mysql\bin'
+  ) | ForEach-Object { (Get-ChildItem $_ -Directory -ErrorAction SilentlyContinue).FullName }
+
+  $bin = $candidatos | Where-Object { $_ -and (Test-Path (Join-Path $_ 'mysql.exe')) -and (Test-Path (Join-Path $_ 'mysqldump.exe')) } | Select-Object -First 1
+  if (-not $bin) {
+    if ($BinIndicado) { Falhar "Na pasta indicada ($BinIndicado) não estão o mysql.exe e o mysqldump.exe." }
+    Falhar 'Não encontrei o MySQL neste computador. Indique a pasta bin do MySQL (a que tem o mysql.exe) no instalador.'
   }
   [pscustomobject]@{ Bin = $bin; Servico = $(if ($servico) { $servico.Name } else { '' }) }
 }
@@ -129,7 +138,7 @@ $porta = if ($cfg.porta) { $cfg.porta } else { '3306' }
 $rootUser = if ($cfg.utilizador) { $cfg.utilizador } else { 'root' }
 $rootSenha = [string]$cfg.senha
 
-$mysqlInfo = Encontrar-MySql
+$mysqlInfo = Encontrar-MySql ([string]$cfg.mysqlBin)
 $mysql = Join-Path $mysqlInfo.Bin 'mysql.exe'
 $mysqldump = Join-Path $mysqlInfo.Bin 'mysqldump.exe'
 
@@ -170,7 +179,12 @@ $cnfPath = Join-Path $App 'scripts\backup.cnf'
 if ($Accao -eq 'instalar') {
   $r = Correr-MySql $mysql $rootUser $rootSenha $porta 'SELECT VERSION();'
   if (-not $r.Ok) { Falhar "Não foi possível ligar ao MySQL com o utilizador '$rootUser': $($r.Saida)" }
-  Escrever "Ligação ao MySQL confirmada (versão $($r.Saida -replace '\s+', ' '))."
+  $versao = ($r.Saida -split '\s+')[0]
+  Escrever "Ligação ao MySQL confirmada (versão $versao)."
+  # CREATE USER IF NOT EXISTS e ALTER USER só existem a partir do MySQL 5.7.6;
+  # antes disso (5.6, como o do cliente) o utilizador cria-se com GRANT ... IDENTIFIED BY
+  $n = $versao -split '[.-]'
+  $antigo = ($versao -notmatch 'MariaDB') -and ([int]$n[0] -lt 5 -or ([int]$n[0] -eq 5 -and ([int]$n[1] -lt 7 -or ([int]$n[1] -eq 7 -and [int]$n[2] -lt 6))))
 
   # a base já existe de uma instalação anterior? manter os dados e reaproveitar a senha do .env
   $existe = (Correr-MySql $mysql $rootUser $rootSenha $porta "SHOW DATABASES LIKE '$BASE';").Saida -match $BASE
@@ -182,16 +196,17 @@ if ($Accao -eq 'instalar') {
   }
   if (-not $senhaBD) { $senhaBD = Nova-Senha 16 }
 
-  $sql = @"
-CREATE DATABASE IF NOT EXISTS $BASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '$UTILIZADOR'@'localhost' IDENTIFIED BY '$senhaBD';
-CREATE USER IF NOT EXISTS '$UTILIZADOR'@'127.0.0.1' IDENTIFIED BY '$senhaBD';
-ALTER USER '$UTILIZADOR'@'localhost' IDENTIFIED BY '$senhaBD';
-ALTER USER '$UTILIZADOR'@'127.0.0.1' IDENTIFIED BY '$senhaBD';
-GRANT ALL PRIVILEGES ON $BASE.* TO '$UTILIZADOR'@'localhost';
-GRANT ALL PRIVILEGES ON $BASE.* TO '$UTILIZADOR'@'127.0.0.1';
-FLUSH PRIVILEGES;
-"@
+  $sql = "CREATE DATABASE IF NOT EXISTS $BASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`r`n"
+  foreach ($maquina in 'localhost', '127.0.0.1') {
+    if ($antigo) {
+      $sql += "GRANT ALL PRIVILEGES ON $BASE.* TO '$UTILIZADOR'@'$maquina' IDENTIFIED BY '$senhaBD';`r`n"
+    } else {
+      $sql += "CREATE USER IF NOT EXISTS '$UTILIZADOR'@'$maquina' IDENTIFIED BY '$senhaBD';`r`n"
+      $sql += "ALTER USER '$UTILIZADOR'@'$maquina' IDENTIFIED BY '$senhaBD';`r`n"
+      $sql += "GRANT ALL PRIVILEGES ON $BASE.* TO '$UTILIZADOR'@'$maquina';`r`n"
+    }
+  }
+  $sql += 'FLUSH PRIVILEGES;'
   $sqlTmp = Join-Path $env:TEMP "transporte_$(Get-Random).sql"
   try {
     Set-Content -Path $sqlTmp -Value $sql -Encoding utf8
@@ -205,10 +220,12 @@ FLUSH PRIVILEGES;
   # mysqldump recente (MySQL 8.0.32+, 8.4, 9.x) faz FLUSH TABLES com --single-transaction e exige
   # o privilégio global FLUSH_TABLES. Não dá acesso a outras bases. Em servidores antigos ou MariaDB
   # o privilégio não existe, mas o mysqldump também não o pede: o erro é ignorado.
-  $flush = "GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'localhost'; GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'127.0.0.1'; FLUSH PRIVILEGES;"
-  $r = Correr-MySql $mysql $rootUser $rootSenha $porta $flush
-  if ($r.Ok) { Escrever 'Privilégio FLUSH_TABLES concedido (necessário às cópias de segurança).' }
-  else { Escrever "FLUSH_TABLES não disponível neste MySQL (normal em versões antigas): $($r.Saida)" 'AVISO' }
+  if (-not $antigo) {
+    $flush = "GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'localhost'; GRANT FLUSH_TABLES ON *.* TO '$UTILIZADOR'@'127.0.0.1'; FLUSH PRIVILEGES;"
+    $r = Correr-MySql $mysql $rootUser $rootSenha $porta $flush
+    if ($r.Ok) { Escrever 'Privilégio FLUSH_TABLES concedido (necessário às cópias de segurança).' }
+    else { Escrever "FLUSH_TABLES não disponível neste MySQL: $($r.Saida)" 'AVISO' }
+  }
 
   $r = Correr-MySql $mysql $UTILIZADOR $senhaBD $porta "USE $BASE; SELECT 1;"
   if (-not $r.Ok) { Falhar "O utilizador '$UTILIZADOR' não consegue ligar-se à base: $($r.Saida)" }

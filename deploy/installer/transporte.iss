@@ -4,6 +4,7 @@
 ; Pré-requisitos no PC: Windows 10/11 x64, Node.js 24 (msi da pen) e o MySQL já instalado.
 ; Instalação silenciosa (sem janelas):
 ;   TransporteApp-Setup-x.y.z.exe /VERYSILENT /SUPPRESSMSGBOXES /MYSQLUSER=root /MYSQLPASS=senha /ADMINPASS=senhaAdmin
+;   (opcional) /MYSQLPORT=3306 /MYSQLBIN="C:\Program Files (x86)\Msys\MysqlServer\bin"
 
 #ifndef Versao
   #define Versao "1.0.0"
@@ -98,11 +99,12 @@ var
   Linhas: TArrayOfString;
 begin
   Result := ExpandConstant('{tmp}\dados.ini');
-  SetArrayLength(Linhas, 4);
+  SetArrayLength(Linhas, 5);
   Linhas[0] := 'utilizador=' + PaginaMySql.Values[0];
   Linhas[1] := 'senha=' + PaginaMySql.Values[1];
   Linhas[2] := 'porta=' + PaginaMySql.Values[2];
   Linhas[3] := 'adminSenha=' + PaginaMySql.Values[3];
+  Linhas[4] := 'mysqlBin=' + PaginaMySql.Values[4];
   SaveStringsToUTF8File(Result, Linhas, False);
 end;
 
@@ -146,19 +148,21 @@ begin
   PaginaMySql.Add('Senha:', True);
   PaginaMySql.Add('Porta:', False);
   PaginaMySql.Add('Senha inicial do administrador do sistema:', True);
+  PaginaMySql.Add('Pasta do MySQL (só se não for encontrado):', False);
   { valores por omissão, ou parâmetros de instalação silenciosa:
     TransporteApp-Setup.exe /VERYSILENT /MYSQLUSER=root /MYSQLPASS=... /MYSQLPORT=3306 /ADMINPASS=... }
   PaginaMySql.Values[0] := ExpandConstant('{param:MYSQLUSER|root}');
   PaginaMySql.Values[1] := ExpandConstant('{param:MYSQLPASS|}');
   PaginaMySql.Values[2] := ExpandConstant('{param:MYSQLPORT|3306}');
   PaginaMySql.Values[3] := ExpandConstant('{param:ADMINPASS|}');
+  PaginaMySql.Values[4] := ExpandConstant('{param:MYSQLBIN|}');
 
   BotaoTestar := TNewButton.Create(WizardForm);
   BotaoTestar.Parent := PaginaMySql.Surface;
   BotaoTestar.Caption := 'Testar ligação';
   BotaoTestar.Width := ScaleX(110);
   BotaoTestar.Height := ScaleY(25);
-  BotaoTestar.Top := PaginaMySql.Edits[3].Top + PaginaMySql.Edits[3].Height + ScaleY(16);
+  BotaoTestar.Top := PaginaMySql.Edits[4].Top + PaginaMySql.Edits[4].Height + ScaleY(16);
   BotaoTestar.Left := 0;
   BotaoTestar.OnClick := @TestarLigacao;
 

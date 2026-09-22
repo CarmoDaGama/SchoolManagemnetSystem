@@ -3,8 +3,9 @@ rem Executar como administrador. Ver plan.md, seccao 9.
 setlocal
 set APP=C:\TransporteApp
 set SVC=TransporteApp
-rem Trocar pelo nome real do servico: sc query state= all | findstr /i mysql
-set MYSQL_SVC=MySQL80
+rem Opcional: nome do servico do MySQL, so para o sistema arrancar depois dele.
+rem Ver com: sc query state= all ^| findstr /i mysql   (deixar vazio se nao houver servico)
+set MYSQL_SVC=
 set CHECKPOINT_DISABLE=1
 cd /d %APP%
 
@@ -12,7 +13,6 @@ where node >nul 2>&1 || (echo [ERRO] Node.js nao instalado. Instale o .msi da pe
 if not exist "%APP%\.env" (echo [ERRO] Falta o ficheiro .env ^(copiar scripts\.env.example^) & pause & exit /b 1)
 if not exist "%APP%\scripts\backup.cnf" (echo [ERRO] Falta scripts\backup.cnf ^(copiar scripts\backup.cnf.example^) & pause & exit /b 1)
 if not exist "%APP%\node_modules\.bin\prisma.cmd" (echo [ERRO] Pacote incompleto: node_modules em falta & pause & exit /b 1)
-sc query %MYSQL_SVC% >nul 2>&1 || (echo [ERRO] Servico MySQL "%MYSQL_SVC%" nao encontrado. Corrija MYSQL_SVC no topo deste ficheiro. & pause & exit /b 1)
 if not exist logs mkdir logs
 if not exist backups mkdir backups
 
@@ -32,7 +32,7 @@ scripts\nssm.exe install %SVC% "%NODE%" "%APP%\dist\main.js"
 scripts\nssm.exe set %SVC% AppDirectory "%APP%"
 scripts\nssm.exe set %SVC% DisplayName "Transporte Escolar"
 scripts\nssm.exe set %SVC% Start SERVICE_AUTO_START
-scripts\nssm.exe set %SVC% DependOnService %MYSQL_SVC%
+if not "%MYSQL_SVC%"=="" scripts\nssm.exe set %SVC% DependOnService %MYSQL_SVC%
 scripts\nssm.exe set %SVC% AppEnvironmentExtra CHECKPOINT_DISABLE=1
 scripts\nssm.exe set %SVC% AppStdout "%APP%\logs\out.log"
 scripts\nssm.exe set %SVC% AppStderr "%APP%\logs\err.log"

@@ -42,7 +42,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         accao,
         entidade,
         entidadeId: String(entidadeId),
-        dados: dados === undefined ? undefined : (JSON.parse(JSON.stringify(dados)) as Prisma.InputJsonValue),
+        // texto JSON: o MySQL 5.6 do cliente não tem o tipo JSON
+        dados: dados === undefined ? undefined : JSON.stringify(dados),
       },
     });
   }

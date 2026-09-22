@@ -220,7 +220,7 @@ CREATE TABLE `AuditLog` (
     `accao` VARCHAR(191) NOT NULL,
     `entidade` VARCHAR(191) NOT NULL,
     `entidadeId` VARCHAR(191) NOT NULL,
-    `dados` JSON NULL,
+    `dados` LONGTEXT NULL,
     `criadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     INDEX `AuditLog_entidade_entidadeId_idx`(`entidade`, `entidadeId`),

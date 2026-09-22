@@ -282,7 +282,7 @@ model AuditLog {
   accao        String // "PAGAMENTO_ANULADO", "MES_ISENTO", "VALOR_ALTERADO"
   entidade     String
   entidadeId   String
-  dados        Json?
+  dados        String?     @db.LongText // JSON em texto: o MySQL 5.6 não tem o tipo JSON
   criadoEm     DateTime    @default(now())
   utilizador   Utilizador? @relation(fields: [utilizadorId], references: [id])
 

@@ -86,6 +86,41 @@ jobs:
             release/TransporteApp.sha256
             release/TransporteApp-Setup-*
 
+  # O cliente tem MySQL 5.6: confirmar que as migrations, a seed e o sistema funcionam nessa versão
+  teste-mysql56:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:5.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: transporte
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -proot" --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/transporte
+      JWT_SECRET: teste-mysql56
+      CHECKPOINT_DISABLE: '1'
+      SEM_COPIAS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Migrations, seed e testes
+        working-directory: api
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+          mysql -h 127.0.0.1 -uroot -proot -e "ALTER DATABASE transporte CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          npx prisma migrate deploy
+          node dist/prisma/seed.js --demo
+          node dist/main.js &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3100/api/health && break || sleep 2; done
+          node test/mysql56.mjs
+
   # Instala o Setup num Windows limpo com MySQL, como no PC do cliente, e confirma que o sistema responde
   teste-instalador:
     needs: pacote

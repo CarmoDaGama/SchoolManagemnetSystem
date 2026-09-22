@@ -44,7 +44,18 @@
       "PowerShell($edge = \"${env:ProgramFiles\\(x86\\)}\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\"; if \\(-not \\(Test-Path $edge\\)\\) { $edge = \"$env:ProgramFiles\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe\" }; $out = \"C:\\\\Users\\\\CARMOG~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-CarmoGama-Desktop-SchoolManagemnetSystem\\\\4a73f98b-8064-4c11-9eb0-92751c2b3a4e\\\\scratchpad\\\\login.png\"; & $edge --headless=new --disable-gpu --window-size=1280,800 --virtual-time-budget=5000 --screenshot=\"$out\" http://127.0.0.1:3100/login/ 2>$null; Start-Sleep -Seconds 4; Test-Path $out)",
       "Bash(timeout 170 node ui.mjs)",
       "Bash(NEXT_TELEMETRY_DISABLED=1 npm run build)",
-      "Bash(timeout 60 node ui.mjs \"/mapa/,/alunos/ver/?id=4\")"
+      "Bash(timeout 60 node ui.mjs \"/mapa/,/alunos/ver/?id=4\")",
+      "Bash(grep -n '`dados`' prisma/migrations/20260917094730_init/migration.sql)",
+      "Bash(CHECKPOINT_DISABLE=1 npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url \"mysql://root:root@127.0.0.1:3307/shadow_diff\")",
+      "Bash(DATABASE_URL=\"mysql://root:root@127.0.0.1:3356/transporte\" CHECKPOINT_DISABLE=1 npx prisma migrate deploy)",
+      "Bash(CHECKPOINT_DISABLE=1 npx prisma generate)",
+      "Bash(DATABASE_URL=\"mysql://root:root@127.0.0.1:3356/transporte\" node dist/prisma/seed.js --demo)",
+      "Bash(DATABASE_URL=\"mysql://root:root@127.0.0.1:3356/transporte\" BACKUP_DOCKER_CONTAINER=mysql56 BACKUP_DIR_INICIAL=./backups node dist/main.js)",
+      "Bash(cd \"/c/Users/CARMOG~1/AppData/Local/Temp/claude/c--Users-CarmoGama-Desktop-SchoolManagemnetSystem/4a73f98b-8064-4c11-9eb0-92751c2b3a4e/scratchpad\" && node smoke.mjs 2>&1 | tail -30; echo \"=== servidor:\"; tail -5 \"/c/Users/CARMOG~1/AppData/Local/Temp/claude/c--Users-CarmoGama-Desktop-SchoolManagemnetSystem/4a73f98b-8064-4c11-9eb0-92751c2b3a4e/tasks/b49maubuv.output\")",
+      "Bash(node teste56.mjs)",
+      "PowerShell(New-Item -ItemType Directory -Force C:\\\\Users\\\\CarmoGama\\\\Desktop\\\\SchoolManagemnetSystem\\\\api\\\\test)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\CARMOG~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-CarmoGama-Desktop-SchoolManagemnetSystem\\\\4a73f98b-8064-4c11-9eb0-92751c2b3a4e\\\\scratchpad\\\\teste56.mjs\" C:\\\\Users\\\\CarmoGama\\\\Desktop\\\\SchoolManagemnetSystem\\\\api\\\\test\\\\mysql56.mjs -Force)",
+      "Bash(node test/mysql56.mjs)"
     ]
   }
 }
