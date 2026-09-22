@@ -267,8 +267,29 @@ $ambienteNode = @{ CHECKPOINT_DISABLE = '1'; PRISMA_HIDE_UPDATE_MESSAGE = '1' }
 
 # prisma chamado directamente pelo node (sem prisma.cmd): nenhum cmd.exe intermédio fica pendurado
 $prismaCli = Join-Path $App 'node_modules\prisma\build\index.js'
+function Aplicar-Migrations {
+  Executar -Exe $node -Argumentos @($prismaCli, 'migrate', 'deploy', '--schema=prisma\schema.prisma') -Segundos 300 -Ambiente $ambienteNode
+}
+
 Escrever 'A aplicar migrations...'
-$r = Executar -Exe $node -Argumentos @($prismaCli, 'migrate', 'deploy', '--schema=prisma\schema.prisma') -Segundos 300 -Ambiente $ambienteNode
+$r = Aplicar-Migrations
+<#
+  P3009: uma instalação anterior falhou a meio e deixou a base num estado inacabado.
+  Se ainda não há dados (nenhum utilizador criado), recria-se a base vazia e tenta-se de novo.
+  Com dados lá dentro, nunca: o problema é comunicado para ser resolvido à mão.
+#>
+if (-not $r.Ok -and $Accao -eq 'instalar' -and $r.Saida -match 'P3009') {
+  $c = Correr-MySql $mysql $rootUser $rootSenha $porta "SELECT COUNT(*) FROM $BASE.Utilizador;"
+  $temDados = $c.Ok -and ([int]($c.Saida -replace '\D', '') -gt 0)
+  if ($temDados) {
+    Falhar "Uma instalação anterior deixou a base '$BASE' a meio, mas já tem dados. Resolva à mão antes de repetir (ver INSTALACAO-MANUAL.md, erro P3009)."
+  }
+  Escrever "Instalação anterior incompleta na base '$BASE' (sem dados): a recriar a base vazia." 'AVISO'
+  $recriar = "DROP DATABASE IF EXISTS $BASE; CREATE DATABASE $BASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+  $c = Correr-MySql $mysql $rootUser $rootSenha $porta $recriar
+  if (-not $c.Ok) { Falhar "Não foi possível recriar a base: $($c.Saida)" }
+  $r = Aplicar-Migrations
+}
 if (-not $r.Ok) { Falhar "As migrations falharam: $($r.Saida)" }
 Escrever (($r.Saida -split "`n" | Where-Object { $_.Trim() }) | Select-Object -Last 1)
 

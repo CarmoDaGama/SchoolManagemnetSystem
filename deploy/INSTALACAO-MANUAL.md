@@ -227,12 +227,46 @@ No sistema, como `admin`:
 | `migrate deploy` dá erro de ligação | senha ou porta erradas no `.env` | testar com `mysql.exe -u transporte_app -p` |
 | `You have an error in your SQL syntax ... IF NOT EXISTS` | MySQL 5.6 com a sintaxe do 8 | usar o SQL do passo 5 |
 | `Unknown column type JSON` | versão antiga do pacote | usar um ZIP posterior a 22/09/2026 |
+| `Error: P3009 ... migration ... failed` | uma tentativa anterior falhou a meio e deixou marca na base | ver "Repetir uma instalação que falhou", em baixo |
 | O serviço não arranca | ver `C:\TransporteApp\logs\err.log` | quase sempre é o `.env` |
 | `ECONNREFUSED` depois de reiniciar | o MySQL ainda não tinha arrancado | `DependOnService` no passo 8 |
 | A cópia de segurança falha | caminho do `mysqldump` ou `backup.cnf` errados | ver o histórico em Configuração › Cópias de segurança |
 | A cópia falha com `RELOAD or FLUSH_TABLES` | MySQL 8.0.32 ou mais recente | `GRANT FLUSH_TABLES ON *.* TO 'transporte_app'@'localhost';` |
 | Acentos estragados nas listas | base criada sem `utf8mb4` | recriar a base como no passo 5 |
 | A porta 3100 está ocupada | outro programa | `netstat -ano \| findstr :3100`, mudar `PORT` no `.env` e no atalho |
+
+## Repetir uma instalação que falhou (erro P3009)
+
+Se uma tentativa anterior falhou a meio das migrations, o Prisma guarda essa marca na base e recusa-se a continuar, mesmo já com o problema resolvido:
+
+```
+Error: P3009
+The `20260917094730_init` migration started at ... failed
+```
+
+**Se a base ainda não tem dados reais** (é o caso quando nunca chegaste a entrar no sistema), a saída limpa é recriá-la:
+
+```powershell
+$bin = "C:\Program Files (x86)\KSoft\MysqlServer\bin"
+& "$bin\mysql.exe" -u root -p -e "DROP DATABASE transporte; CREATE DATABASE transporte CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+cd C:\TransporteApp
+$env:CHECKPOINT_DISABLE = "1"
+node node_modules\prisma\build\index.js migrate deploy --schema=prisma\schema.prisma
+node dist\prisma\seed.js
+```
+
+As permissões do `transporte_app` continuam válidas: os `GRANT` não se perdem quando a base é apagada.
+
+🛑 **Se a base já tiver dados reais** (alunos, pagamentos), não faças isto. Restaura primeiro a última cópia de segurança e só depois trata da migration.
+
+Confirma primeiro se há dados:
+
+```powershell
+& "$bin\mysql.exe" -u root -p -e "SELECT COUNT(*) FROM transporte.Aluno;"
+```
+
+O instalador faz esta recuperação sozinho, mas só quando a base está vazia.
 
 ## Actualizar mais tarde
 

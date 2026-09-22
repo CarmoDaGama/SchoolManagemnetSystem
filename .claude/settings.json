@@ -55,7 +55,11 @@
       "Bash(node teste56.mjs)",
       "PowerShell(New-Item -ItemType Directory -Force C:\\\\Users\\\\CarmoGama\\\\Desktop\\\\SchoolManagemnetSystem\\\\api\\\\test)",
       "PowerShell(Copy-Item \"C:\\\\Users\\\\CARMOG~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-CarmoGama-Desktop-SchoolManagemnetSystem\\\\4a73f98b-8064-4c11-9eb0-92751c2b3a4e\\\\scratchpad\\\\teste56.mjs\" C:\\\\Users\\\\CarmoGama\\\\Desktop\\\\SchoolManagemnetSystem\\\\api\\\\test\\\\mysql56.mjs -Force)",
-      "Bash(node test/mysql56.mjs)"
+      "Bash(node test/mysql56.mjs)",
+      "Bash(export DATABASE_URL=\"mysql://root:root@127.0.0.1:3356/p3009\")",
+      "Bash(CHECKPOINT_DISABLE=1 node node_modules/prisma/build/index.js migrate deploy)",
+      "Bash(DATABASE_URL=\"mysql://root:root@127.0.0.1:3356/p3009\" node dist/prisma/seed.js)",
+      "PowerShell(Set-Location C:\\\\Users\\\\CarmoGama\\\\Desktop\\\\SchoolManagemnetSystem; $e=$null; [void][Management.Automation.Language.Parser]::ParseFile\\(\"$PWD\\\\deploy\\\\installer\\\\configurar.ps1\",[ref]$null,[ref]$e\\); \"ps1 erros: $\\($e.Count\\)\"; $b=[IO.File]::ReadAllBytes\\(\"$PWD\\\\deploy\\\\installer\\\\configurar.ps1\"\\); \"BOM: $\\($b[0..2] -join ','\\)\")"
     ]
   }
 }
